@@ -2,22 +2,13 @@
 
 import pandas as pd
 from datetime import datetime
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 import logging
 
 logger = logging.getLogger(__name__)
 
 class PaymentRanker:
     """Ranks and selects optimal payment options."""
-    
-    RANKING_CRITERIA = [
-        ('complete_by_deadline', True),      # Must complete by deadline
-        ('requires_spending_changes', False), # Minimize spending changes
-        ('total_cost', False),               # Minimize total cost
-        ('start_date', True),                # Start earlier
-        ('num_payments', False),             # Fewer payments
-        ('payment_option_id', True)          # Lowest ID as tiebreaker
-    ]
     
     def __init__(self, payment_options_df: pd.DataFrame):
         self.payment_options_df = payment_options_df
@@ -29,6 +20,9 @@ class PaymentRanker:
         """Get payment options eligible for user."""
         
         options = self.payment_options_df[self.payment_options_df['request_id'] == request_id].copy()
+        
+        if options.empty:
+            return pd.DataFrame()
         
         # Filter by user's accepted payment methods
         eligible = []
@@ -43,67 +37,48 @@ class PaymentRanker:
         
         return pd.DataFrame(eligible) if eligible else pd.DataFrame()
     
-    def rank_options(self,
-                    eligible_options: pd.DataFrame,
-                    desired_completion_date: datetime,
-                    safe_payment_options: List[str]) -> Optional[Dict]:
-        """Rank payment options by criteria."""
+    def rank_options(self, eligible_options: pd.DataFrame) -> Optional[Dict]:
+        """Rank payment options - prefer full_payment, then installments with fewer payments."""
         
         if eligible_options.empty:
             return None
         
-        # Score each option
-        scores = []
-        for _, opt in eligible_options.iterrows():
-            score = self._score_option(
-                opt,
-                desired_completion_date,
-                opt['payment_option_id'] in safe_payment_options
-            )
-            scores.append((score, opt))
+        # Separate by method
+        full_payments = eligible_options[eligible_options['payment_method'] == 'full_payment']
+        installments = eligible_options[eligible_options['payment_method'] == 'installments']
+        partial = eligible_options[eligible_options['payment_method'] == 'partial_payment']
         
-        # Sort by score (descending)
-        scores.sort(key=lambda x: x[0], reverse=True)
+        # Prefer full payment
+        if not full_payments.empty:
+            return full_payments.iloc[0].to_dict()
         
-        return scores[0][1].to_dict() if scores else None
-    
-    def _score_option(self, option: pd.Series, deadline: datetime, is_safe: bool) -> Tuple:
-        """Score option according to ranking criteria."""
+        # Then installments with fewer payments
+        if not installments.empty:
+            return installments.nsmallest(1, 'number_of_payments').iloc[0].to_dict()
         
-        score = []
+        # Finally partial payment
+        if not partial.empty:
+            return partial.iloc[0].to_dict()
         
-        # 1. Complete by deadline
-        last_payment = pd.to_datetime(option['first_payment_date']) + pd.Timedelta(days=option['payment_frequency_days'] * (option['number_of_payments'] - 1))
-        score.append(last_payment <= deadline)
-        
-        # 2. Requires spending changes (assume False for now)
-        score.append(False)
-        
-        # 3. Total cost
-        score.append(-option['total_payable_amount'])
-        
-        # 4. Start date (earlier is better)
-        score.append(-pd.to_datetime(option['first_payment_date']).timestamp())
-        
-        # 5. Number of payments (fewer is better)
-        score.append(-option['number_of_payments'])
-        
-        # 6. Payment option ID
-        score.append(option['payment_option_id'])
-        
-        return tuple(score)
+        return None
     
     def generate_payment_plan(self, option: Dict) -> str:
         """Generate payment plan string from option."""
         
         first_date = pd.to_datetime(option['first_payment_date'])
-        frequency_days = option['payment_frequency_days']
-        num_payments = option['number_of_payments']
+        frequency_days = int(option['payment_frequency_days']) if pd.notna(option['payment_frequency_days']) else 0
+        num_payments = int(option['number_of_payments'])
         payment_amount = option['payment_amount']
         
+        if num_payments == 1:
+            return f"{first_date.date()}:{payment_amount}"
+        
         payments = []
-        for i in range(int(num_payments)):
-            payment_date = first_date + pd.Timedelta(days=frequency_days * i)
+        for i in range(num_payments):
+            if frequency_days > 0:
+                payment_date = first_date + pd.Timedelta(days=frequency_days * i)
+            else:
+                payment_date = first_date
             payments.append(f"{payment_date.date()}:{payment_amount}")
         
         return '|'.join(payments)

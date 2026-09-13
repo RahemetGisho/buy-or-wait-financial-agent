@@ -1,18 +1,15 @@
-"""LLM-powered explanation generation."""
+"""Explanation generation module."""
 
 import logging
 from typing import Dict
-import os
 
 logger = logging.getLogger(__name__)
 
 class LLMExplainer:
-    """Generates personalized decision explanations using LLM."""
+    """Generates decision explanations."""
     
     def __init__(self):
-        self.api_key = os.getenv('ANTHROPIC_API_KEY')
-        self.model = 'claude-3-5-sonnet-20241022'
-        self.token_count = 0
+        pass
     
     def generate_explanation(self,
                             request: Dict,
@@ -23,16 +20,21 @@ class LLMExplainer:
         status = affordability.get('affordability_status')
         method = affordability.get('recommended_payment_method')
         safe_amount = affordability.get('amount_safe_to_pay', 0)
+        currency = profile['home_currency']
+        min_balance = profile['minimum_balance_to_keep']
+        request_type = request['request_type'].replace('_', ' ')
         
-        # Template-based explanations (no LLM calls for speed)
+        # Generate explanations based on affordability status
         if status == 'affordable_now':
-            return f"Pay {safe_amount} {profile['home_currency']} today. This leaves at least {profile['minimum_balance_to_keep']} {profile['home_currency']} available over the next 90 days."
+            return f"Pay {currency} {safe_amount:.0f} today. This leaves at least {currency} {min_balance:.0f} available over the next 90 days."
         
         elif status == 'affordable_with_plan':
-            return f"Use {method} to spread payments over time. This leaves at least {profile['minimum_balance_to_keep']} {profile['home_currency']} available."
+            method_name = method.replace('_', ' ').title()
+            return f"Use {method_name} to manage payments. This keeps at least {currency} {min_balance:.0f} available throughout."
         
         elif status == 'affordable_later':
-            return f"Wait until {affordability.get('earliest_date_for_full_payment')} to pay the full amount. Paying earlier would put the {profile['minimum_balance_to_keep']} {profile['home_currency']} minimum at risk."
+            earliest_date = affordability.get('earliest_date_for_full_payment')
+            return f"Wait until {earliest_date} to pay the full amount. Paying earlier would put the {currency} {min_balance:.0f} minimum at risk."
         
         else:  # not_affordable
-            return f"Do not proceed with this {request['request_type'].replace('_', ' ')}. None of the available options keeps the {profile['minimum_balance_to_keep']} {profile['home_currency']} minimum protected."
+            return f"Do not proceed with this {request_type}. None of the available options keeps the {currency} {min_balance:.0f} minimum protected."

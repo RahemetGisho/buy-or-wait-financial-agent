@@ -1,11 +1,11 @@
 """Data loading and preprocessing module."""
 
 import pandas as pd
-import json
 from pathlib import Path
-from datetime import datetime
 from PIL import Image
-import io
+import logging
+
+logger = logging.getLogger(__name__)
 
 class DataLoader:
     """Loads and validates all input data files."""
@@ -55,13 +55,4 @@ class DataLoader:
         image_path = self.media_path / f'{image_id}.png'
         if image_path.exists():
             return Image.open(image_path)
-        return None
-    
-    def extract_amount_from_image(self, image_id: str) -> float:
-        """Extract transaction amount from image using OCR-like processing."""
-        image = self.get_image(image_id)
-        if image is None:
-            return None
-        # In a real scenario, use pytesseract or Claude's vision API
-        # For now, return None to indicate manual review needed
         return None

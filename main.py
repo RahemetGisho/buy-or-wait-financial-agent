@@ -12,8 +12,6 @@ from datetime import datetime, timedelta
 
 # Import core modules
 from src.data_loader import DataLoader
-from src.financial_calculator import FinancialCalculator
-from src.payment_ranker import PaymentRanker
 from src.affordability_agent import AffordabilityAgent
 from src.utils import setup_logging, log_token_usage
 
@@ -105,11 +103,6 @@ def main():
     print(f"  Affordable with plan: {(results_df['affordability_status'] == 'affordable_with_plan').sum()}")
     print(f"  Affordable later: {(results_df['affordability_status'] == 'affordable_later').sum()}")
     print(f"  Not affordable: {(results_df['affordability_status'] == 'not_affordable').sum()}")
-    print()
-    
-    # Token usage summary
-    print("Token Usage Summary:")
-    log_token_usage()
     print()
     
     print("="*80)

@@ -36,16 +36,21 @@ class AffordabilityAgent:
         try:
             # Get user profile
             user_id = request['user_id']
-            profile = self.profiles_df[self.profiles_df['user_id'] == user_id].iloc[0].to_dict()
+            profile_rows = self.profiles_df[self.profiles_df['user_id'] == user_id]
+            
+            if profile_rows.empty:
+                raise ValueError(f"Profile not found for user {user_id}")
+            
+            profile = profile_rows.iloc[0].to_dict()
             
             # Parse payment preferences
             payment_methods = self._parse_payment_methods(profile)
             
-            # Initialize financial calculator
+            # Initialize calculators
             calc = FinancialCalculator(profile, self.exchange_rates_df)
-            
-            # Get payment options
             ranker = PaymentRanker(self.payment_options_df)
+            
+            # Get eligible payment options
             eligible_options = ranker.get_eligible_options(
                 request['request_id'],
                 payment_methods,
@@ -98,12 +103,14 @@ class AffordabilityAgent:
                              ranker: PaymentRanker) -> Dict:
         """Assess affordability and determine recommendation."""
         
-        amount = request['requested_amount']
+        amount = float(request['requested_amount'])
         completion_date = pd.to_datetime(request['desired_completion_date'])
         request_date = pd.to_datetime(request['request_date'])
+        min_balance = float(profile['minimum_balance_to_keep'])
+        current_balance = float(profile['current_available_balance'])
         
-        # Check if affordable now
-        if calc.current_balance >= amount + calc.minimum_balance:
+        # Check if affordable now (can pay full amount and maintain minimum)
+        if current_balance >= amount + min_balance:
             return {
                 'amount_safe_to_pay': amount,
                 'affordability_status': 'affordable_now',
@@ -113,13 +120,9 @@ class AffordabilityAgent:
                 'spending_changes_needed': 'none'
             }
         
-        # Check if affordable with plan
+        # Check if affordable with plan (use payment options)
         if not eligible_options.empty:
-            best_option = ranker.rank_options(
-                eligible_options,
-                completion_date,
-                []
-            )
+            best_option = ranker.rank_options(eligible_options)
             if best_option:
                 return {
                     'amount_safe_to_pay': 0,
@@ -130,9 +133,9 @@ class AffordabilityAgent:
                     'spending_changes_needed': 'none'
                 }
         
-        # Check if affordable later
-        future_date = request_date + timedelta(days=90)
-        if future_date <= completion_date:
+        # Check if affordable later (within 90 days + completion deadline)
+        max_future_date = request_date + timedelta(days=90)
+        if completion_date <= max_future_date:
             return {
                 'amount_safe_to_pay': 0,
                 'affordability_status': 'affordable_later',
